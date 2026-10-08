@@ -195,10 +195,15 @@ if (!data.ok || !data.result?.success) {
       'error'
     );
 
-  } finally {
-    submissionInProgress = false;
-    $('submit').disabled = true;
-  }
+  
+} finally {
+  submissionInProgress = false;
+
+  // Keep disabled until we officially enable submissions.
+  // Once enabled, this will allow safe retries.
+  $('submit').disabled = true;
+}
+
 }
 
 
