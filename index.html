@@ -154,13 +154,22 @@ async function submitUsageToLCEMS() {
 
     const data = await response.json();
 
-    if (!data.ok || !data.result?.success) {
-      throw new Error(
-        data.result?.message ||
-        data.error?.message ||
-        'LCEMS did not confirm the submission.'
-      );
-    }
+   
+if (!data.ok || !data.result?.success) {
+  submissionNeedsConfirmation = false;
+
+  status(
+    'reviewStatus',
+    'LCEMS rejected the submission: ' +
+      (data.result?.message ||
+       data.error?.message ||
+       'Unknown error.'),
+    'error'
+  );
+
+  return;
+}
+
 
     submissionNeedsConfirmation = false;
 
