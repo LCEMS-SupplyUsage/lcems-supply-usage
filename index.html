@@ -162,6 +162,8 @@ async function submitUsageToLCEMS() {
       );
     }
 
+    submissionNeedsConfirmation = false;
+
     status(
       'reviewStatus',
       data.result.message || 'Supply usage recorded successfully.',
@@ -173,6 +175,9 @@ async function submitUsageToLCEMS() {
     renderReview();
 
   } catch (error) {
+	  
+    submissionNeedsConfirmation = true;
+
     status(
       'reviewStatus',
       'Submission could not be confirmed: ' +
