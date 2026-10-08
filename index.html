@@ -21,7 +21,7 @@
 'use strict';
 const API='https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP7caqBiBWnLqMCPR_10GXgkn9B_dX0xeHi7tL0M_w/exec';
 // Deliberately OFF until the Apps Script deployment and controlled test are ready.
-const SUBMISSIONS_ENABLED=false;
+const SUBMISSIONS_ENABLED=true;
 const STORAGE_KEY='lcems_usage_pending_v1';
 const $=id=>document.getElementById(id);
 let catalog=[],scanner=null,starting=false,running=false,lastScan='',lastScanAt=0;
