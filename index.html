@@ -14,307 +14,251 @@
 <section class="card"><h2>2. Scan Supplies</h2><p class="muted">The camera stays open between scans. Repeated scans of the same code are briefly ignored to prevent accidental duplicates.</p><button id="start" class="primary" type="button">📷 Start scanning</button> <button id="stop" type="button" hidden>Stop camera</button><div id="reader"></div><div id="scanStatus" class="status">Camera not started.</div><div id="picker" class="picker" hidden><strong id="pickerTitle">Choose size</strong><div id="sizeButtons" class="sizes"></div><button id="closePicker" type="button">Cancel</button></div><label for="supplyId">Or enter a Supply ID</label><div class="row"><input id="supplyId" placeholder="SUP-0001 or GROUP-ETT" autocomplete="off"><button id="addId" class="primary small-button" type="button">Add ID</button></div></section>
 <section class="card"><h2>3. Search Supply Catalog</h2><input id="search" type="search" placeholder="Search supply name, category, or ID"><p class="muted" id="catalogCount">Loading catalog...</p><div id="catalog" class="catalog"></div></section>
 <section class="card"><h2>4. Quick Add</h2><p class="muted">Common actions</p><div class="row"><button type="button" id="quickAddIvStart">💉 IV Start</button><button type="button" id="quickAdd500Ns">💧 500ml NS + Tubing</button></div><p class="muted">Grouped supplies</p><div class="row"><button type="button" data-group="ETT">ETT sizes</button><button type="button" data-group="NPA">NPA sizes</button><button type="button" data-group="OPA">OPA sizes</button></div><div id="quickAddStatus" class="status" hidden></div></section>
-<section class="card"><h2>5. Review Supplies <span id="total" class="pill">0 units</span></h2><div id="review" class="muted">No supplies selected yet.</div><div id="reviewStatus" class="status" hidden></div><button id="submit" class="primary" type="button" disabled>Submit Supply Usage (not enabled yet)</button><p class="muted">Testing mode: nothing on this page is submitted to Google Sheets. The existing LCEMS portal remains unchanged.</p></section>
-<div class="footer">LCEMS Supply Usage · Interface testing version</div>
+<section class="card"><h2>5. Review Supplies <span id="total" class="pill">0 units</span></h2><div id="review" class="muted">No supplies selected yet.</div><div id="reviewStatus" class="status" hidden></div><button id="submit" class="primary" type="button" disabled>Submit Supply Usage (not enabled yet)</button><p id="modeNotice" class="muted">Testing mode: submissions are disabled. The existing LCEMS portal remains unchanged.</p></section>
+<div class="footer">LCEMS Supply Usage · Pre-launch verification</div>
 </main>
 <script>
 'use strict';
 const API='https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP7caqBiBWnLqMCPR_10GXgkn9B_dX0xeHi7tL0M_w/exec';
+// Deliberately OFF until the Apps Script deployment and controlled test are ready.
+const SUBMISSIONS_ENABLED=false;
+const STORAGE_KEY='lcems_usage_pending_v1';
 const $=id=>document.getElementById(id);
 let catalog=[],scanner=null,starting=false,running=false,lastScan='',lastScanAt=0;
+const selected=new Map();
+let submissionInProgress=false;
+let pendingSubmissionData=null;
+let submissionNeedsConfirmation=false;
+let submissionBlocked=false;
 
-async function testPostConnection() {
-  const body = JSON.stringify({
-    api: "v1",
-    action: "connectionTest"
-  });
-
-  try {
-    const response = await fetch(API, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=UTF-8"
-      },
-      body,
-      redirect: "follow"
-    });
-
-    const result = await response.json();
-    console.log("POST connection response:", result);
-  } catch (error) {
-    console.error("POST connection failed:", error);
-  }
+function status(id,message,kind=''){
+  const el=$(id);el.textContent=message;el.className='status'+(kind?' '+kind:'');
 }
-
-	const selected=new Map();
-	
-let pendingSubmissionId = null;
-
-let submissionInProgress = false;
-
-let submissionNeedsConfirmation = false;
-
-function getSubmissionId() {
-  if (!pendingSubmissionId) {
-    pendingSubmissionId =
-      "LCEMS_" + crypto.randomUUID().replace(/-/g, "");
-  }
-
-  return pendingSubmissionId;
-}
-
-function buildUsageSubmission() {
-  const base = $('base').value.trim();
-  const employee = $('employee').value.trim();
-  const truckNumber = $('truck').value.trim();
-
-  const items = Array.from(selected.values()).map(item => ({
-    category: item.category,
-    supply: item.supply,
-    quantity: item.quantity
-  }));
-
-  if (!base) {
-    throw new Error("Please select your base.");
-  }
-
-  if (!employee) {
-    throw new Error("Please select your name.");
-  }
-
-  if (!items.length) {
-    throw new Error("Please add at least one supply.");
-  }
-
-  if (items.some(item =>
-    !Number.isSafeInteger(item.quantity) ||
-    item.quantity < 1 ||
-    item.quantity > 50
-  )) {
-    throw new Error(
-      "Each supply must have a quantity between 1 and 50."
-    );
-  }
-
-  return {
-    clientSubmissionId: getSubmissionId(),
-    base,
-    employee,
-    truckNumber,
-    items
-  };
-}
-
-function status(id,message,kind=''){const el=$(id);el.textContent=message;el.className='status'+(kind?' '+kind:'');}
 function values(input){return Array.isArray(input)?input.map(v=>typeof v==='string'?v:(v&&typeof v==='object'?(v.name||v.label||v.value||''):'' )).map(v=>String(v).trim()).filter(Boolean):[];}
 function populate(id,arr,placeholder){const select=$(id);select.replaceChildren(new Option(placeholder,''));for(const v of [...new Set(values(arr))])select.add(new Option(v,v));}
 function normalized(item){return {category:String(item?.category||'').trim(),supply:String(item?.supply||'').trim(),supplyID:String(item?.supplyID||'').trim(),trackInventory:item?.trackInventory};}
-async function loadData(){try{const response=await fetch(API+'?api=v1&action=bootstrap',{redirect:'follow'});if(!response.ok)throw Error('HTTP '+response.status);const json=await response.json();if(!json.ok||!json.data)throw Error(json.error?.message||'Invalid API response');const data=json.data;catalog=(Array.isArray(data.supplies)?data.supplies:[]).map(normalized).filter(x=>x.category&&x.supply&&x.trackInventory!==false&&String(x.trackInventory).toLowerCase()!=='false');populate('base',data.bases,'Select base');populate('employee',data.usageEmployees,'Select employee');status('loadStatus',`Loaded ${catalog.length} usable supplies from LCEMS. Select your base and employee.`, 'good');renderCatalog();}catch(err){status('loadStatus','Could not load LCEMS data: '+err.message,'error');$('catalogCount').textContent='Catalog unavailable.';}}
-
-async function submitUsageToLCEMS() {
-  if (submissionInProgress) return;
-
-  let formData;
-
-  try {
-    formData = buildUsageSubmission();
-  } catch (error) {
-    status('reviewStatus', error.message, 'error');
-    $('reviewStatus').hidden = false;
-    return;
-  }
-
-  submissionInProgress = true;
-  $('submit').disabled = true;
-
-  status(
-    'reviewStatus',
-    'Submitting supply usage to LCEMS...',
-    ''
-  );
-  $('reviewStatus').hidden = false;
-
-  try {
-    const response = await fetch(API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=UTF-8'
-      },
-      body: JSON.stringify({
-        api: 'v1',
-        action: 'submitUsage',
-        formData
-      }),
-      redirect: 'follow'
-    });
-
-    if (!response.ok) {
-      throw new Error('Server returned HTTP ' + response.status);
-    }
-
-    const data = await response.json();
-
-   
-if (!data.ok || !data.result?.success) {
-  submissionNeedsConfirmation = false;
-
-  status(
-    'reviewStatus',
-    'LCEMS rejected the submission: ' +
-      (data.result?.message ||
-       data.error?.message ||
-       'Unknown error.'),
-    'error'
-  );
-
-  return;
+function keyFor(item){return item.category+'|||'+item.supply;}
+function editingLocked(){return submissionInProgress||submissionNeedsConfirmation||submissionBlocked;}
+function showLockedMessage(){
+  status('reviewStatus',submissionBlocked?'The previous submission requires administrator review before further changes.':
+    'A submission is pending confirmation. Retry that same submission before changing the supplies.','error');
+  $('reviewStatus').hidden=false;
 }
-
-
-    submissionNeedsConfirmation = false;
-
-    status(
-      'reviewStatus',
-      data.result.message || 'Supply usage recorded successfully.',
-      'good'
-    );
-
+function canEdit(){if(editingLocked()){showLockedMessage();return false;}return true;}
+function updateSubmitButton(){
+  const button=$('submit');
+  button.disabled=!SUBMISSIONS_ENABLED||submissionInProgress||submissionBlocked||(!pendingSubmissionData&&selected.size===0);
+  button.textContent=submissionInProgress?'Submitting...':submissionBlocked?'Administrator Review Required':
+    submissionNeedsConfirmation?'Retry Previous Submission':
+    SUBMISSIONS_ENABLED?'Submit Supply Usage':'Submit Supply Usage (not enabled yet)';
+  for(const id of ['base','employee','truck','supplyId','addId','quickAddIvStart','quickAdd500Ns']) $(id).disabled=editingLocked();
+  document.querySelectorAll('[data-group]').forEach(el=>el.disabled=editingLocked());
+  document.querySelectorAll('#review button, #catalog button, #sizeButtons button').forEach(el=>el.disabled=editingLocked());
+}
+function resetPendingSubmission(){
+  if(!canEdit())return false;
+  pendingSubmissionData=null;
+  return true;
+}
+function savePending(){
+  if(!pendingSubmissionData)return;
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({formData:pendingSubmissionData,needsConfirmation:submissionNeedsConfirmation,blocked:submissionBlocked}));
+}
+function clearPending(){
+  pendingSubmissionData=null;submissionNeedsConfirmation=false;submissionBlocked=false;
+  try{localStorage.removeItem(STORAGE_KEY);}catch(err){console.warn(err);}
+}
+function restorePending(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return;
+    const stored=JSON.parse(raw);
+    if(!stored?.formData?.clientSubmissionId||!Array.isArray(stored.formData.items))throw Error('Invalid saved submission');
+    pendingSubmissionData=stored.formData;
+    submissionNeedsConfirmation=true;
+    submissionBlocked=!!stored.blocked;
     selected.clear();
-    pendingSubmissionId = null;
+    for(const item of pendingSubmissionData.items)selected.set(keyFor(item),{category:item.category,supply:item.supply,quantity:item.quantity});
+    status('reviewStatus',submissionBlocked?'A previous submission needs administrator review. Do not resubmit it.':
+      'A previous submission was saved on this device. Verify its status, then retry the SAME transaction if needed.','error');
+    $('reviewStatus').hidden=false;
     renderReview();
-
-  } catch (error) {
-	  
-    submissionNeedsConfirmation = true;
-
-    status(
-      'reviewStatus',
-      'Submission could not be confirmed: ' +
-      error.message +
-      '. Do not start a new transaction until this is checked.',
-      'error'
-    );
-
-  
-} finally {
-  submissionInProgress = false;
-
-  // Keep disabled until we officially enable submissions.
-  // Once enabled, this will allow safe retries.
-  $('submit').disabled = true;
-}
-
-}
-
-
-
-const SUBMISSIONS_ENABLED = false;
-
-function updateSubmitButton() {
-  const button = $('submit');
-
-  button.disabled =
-    !SUBMISSIONS_ENABLED ||
-    submissionInProgress ||
-    selected.size === 0;
-
-  button.textContent = submissionInProgress
-    ? 'Submitting...'
-    : submissionNeedsConfirmation
-      ? 'Retry Previous Submission'
-      : 'Submit Supply Usage';
-}
-
-function resetPendingSubmission() {
-  if (submissionInProgress) {
-    throw new Error(
-      "Please wait until the current submission finishes."
-    );
+  }catch(err){
+    console.error('Unable to restore pending submission:',err);
+    submissionBlocked=true;
+    status('reviewStatus','Saved submission data could not be read. Contact the supply administrator before proceeding.','error');
+    $('reviewStatus').hidden=false;
   }
-
-  if (submissionNeedsConfirmation) {
-    throw new Error(
-      "Your previous submission has not been confirmed. " +
-      "Please retry or contact the supply administrator " +
-      "before changing supplies."
-    );
+}
+async function loadData(){
+  try{
+    const response=await fetch(API+'?api=v1&action=bootstrap',{redirect:'follow'});
+    if(!response.ok)throw Error('HTTP '+response.status);
+    const json=await response.json();if(!json.ok||!json.data)throw Error(json.error?.message||'Invalid API response');
+    const data=json.data;
+    catalog=(Array.isArray(data.supplies)?data.supplies:[]).map(normalized)
+      .filter(x=>x.category&&x.supply&&x.trackInventory!==false&&String(x.trackInventory).toLowerCase()!=='false');
+    populate('base',data.bases,'Select base');populate('employee',data.usageEmployees,'Select employee');
+    if(pendingSubmissionData){
+      const d=pendingSubmissionData;
+      if(!Array.from($('base').options).some(o=>o.value===d.base))$('base').add(new Option(d.base,d.base));
+      if(!Array.from($('employee').options).some(o=>o.value===d.employee))$('employee').add(new Option(d.employee,d.employee));
+      $('base').value=d.base;$('employee').value=d.employee;$('truck').value=d.truckNumber||'';
+    }
+    status('loadStatus',`Loaded ${catalog.length} usable supplies from LCEMS. Select your base and employee.`,'good');
+    renderCatalog();updateSubmitButton();
+  }catch(err){status('loadStatus','Could not load LCEMS data: '+err.message,'error');$('catalogCount').textContent='Catalog unavailable.';}
+}
+function buildUsageSubmission(){
+  const base=$('base').value.trim(),employee=$('employee').value.trim(),truckNumber=$('truck').value.trim();
+  const items=Array.from(selected.values()).map(item=>({category:item.category,supply:item.supply,quantity:item.quantity}));
+  if(!base)throw Error('Please select your base.');
+  if(!employee)throw Error('Please select your name.');
+  if(!items.length)throw Error('Please add at least one supply.');
+  if(items.some(item=>!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>50))
+    throw Error('Each supply must have a quantity between 1 and 50.');
+  if(typeof crypto?.randomUUID!=='function')throw Error('This browser cannot create a secure submission ID.');
+  return {clientSubmissionId:'LCEMS_'+crypto.randomUUID().replace(/-/g,''),base,employee,truckNumber,items};
+}
+async function submitUsageToLCEMS(){
+  if(!SUBMISSIONS_ENABLED||submissionInProgress||submissionBlocked)return;
+  if(!pendingSubmissionData){
+    try{pendingSubmissionData=buildUsageSubmission();savePending();}
+    catch(err){pendingSubmissionData=null;status('reviewStatus','Cannot safely prepare submission: '+err.message,'error');$('reviewStatus').hidden=false;return;}
   }
-
-  pendingSubmissionId = null;
+  try{savePending();}
+  catch(err){status('reviewStatus','Cannot save retry details on this device. Submission cancelled: '+err.message,'error');$('reviewStatus').hidden=false;return;}
+  submissionInProgress=true;submissionNeedsConfirmation=true;updateSubmitButton();
+  status('reviewStatus','Submitting supply usage to LCEMS...');$('reviewStatus').hidden=false;
+  try{
+    // The exact saved payload and ID are reused on every retry.
+    const response=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},
+      body:JSON.stringify({api:'v1',action:'submitUsage',formData:pendingSubmissionData}),redirect:'follow'});
+    if(!response.ok)throw Error('Server returned HTTP '+response.status);
+    const data=await response.json();
+    if(!data.ok||!data.result?.success){
+      // A server error might occur after a partial sheet write. Never create a new ID automatically.
+      submissionBlocked=true;savePending();
+      status('reviewStatus','LCEMS did not confirm the submission: '+
+        (data.result?.message||data.error?.message||'Unknown server error.')+
+        ' Contact the supply administrator to check the Usage Log before starting another transaction.','error');
+      return;
+    }
+    const result=data.result;
+    clearPending();selected.clear();renderReview();
+    status('reviewStatus',(result.message||'Supply usage recorded successfully.')+
+      (result.duplicate?' (Previously recorded transaction confirmed.)':''),'good');
+  }catch(err){
+    submissionNeedsConfirmation=true;savePending();
+    status('reviewStatus','Submission could not be confirmed: '+err.message+
+      '. The same transaction is saved for retry. Do not create a new submission until its status is confirmed.','error');
+  }finally{submissionInProgress=false;updateSubmitButton();}
 }
-
-
-	function keyFor(item){return item.category+'|||'+item.supply;}
-
-function addItem(item, amount = 1) {
-  resetPendingSubmission();
-
-  const key = keyFor(item);
-  const old = selected.get(key);
-
-  selected.set(key, {
-    category: item.category,
-    supply: item.supply,
-    quantity: (old?.quantity || 0) + amount
-  });
-
-  renderReview();
-  status('scanStatus', 'Added: ' + item.supply, 'good');
+function addItem(item,amount=1){
+  if(!resetPendingSubmission())return;
+  const key=keyFor(item),old=selected.get(key),quantity=(old?.quantity||0)+amount;
+  if(quantity>50){status('scanStatus','Maximum quantity is 50 per supply.','error');return;}
+  selected.set(key,{category:item.category,supply:item.supply,quantity});
+  renderReview();status('scanStatus','Added: '+item.supply,'good');
 }
-
 function addUsageBundle(entries){
-  const resolved=[];
-  const missing=[];
-  for(const entry of entries){
-    const item=catalog.find(x=>x.supply.toLowerCase()===entry.supply.toLowerCase());
-    if(!item){missing.push(entry.supply);continue;}
-    resolved.push({item,quantity:entry.quantity});
-  }
-  if(missing.length){
-    const message='Could not add bundle. Missing from usable supply catalog: '+missing.join(', ')+'. No supplies were added.';
-    status('quickAddStatus',message,'error');
-    $('quickAddStatus').hidden=false;
-    return;
-  }
+  if(!canEdit())return;
+  const resolved=[],missing=[];
+  for(const entry of entries){const item=catalog.find(x=>x.supply.toLowerCase()===entry.supply.toLowerCase());
+    if(!item)missing.push(entry.supply);else resolved.push({item,quantity:entry.quantity});}
+  if(missing.length){status('quickAddStatus','Could not add bundle. Missing from usable supply catalog: '+missing.join(', ')+'. No supplies were added.','error');$('quickAddStatus').hidden=false;return;}
+  if(resolved.some(({item,quantity})=>(selected.get(keyFor(item))?.quantity||0)+quantity>50)){
+    status('quickAddStatus','Bundle would exceed the maximum quantity of 50 per supply.','error');$('quickAddStatus').hidden=false;return;}
   for(const entry of resolved)addItem(entry.item,entry.quantity);
-  status('quickAddStatus','Added '+resolved.map(x=>x.item.supply+' × '+x.quantity).join(', ')+'.','good');
-  $('quickAddStatus').hidden=false;
+  status('quickAddStatus','Added '+resolved.map(x=>x.item.supply+' × '+x.quantity).join(', ')+'.','good');$('quickAddStatus').hidden=false;
 }
-function handleId(raw){const id=String(raw||'').trim().toUpperCase();if(!id)return;if(['GROUP-ETT','GROUP-NPA','GROUP-OPA'].includes(id)){openPicker(id.slice(6));return;}const item=catalog.find(x=>x.supplyID.toUpperCase()===id);if(!item){status('scanStatus','Supply ID '+id+' was not found in the usable catalog.','error');return;}addItem(item);}
-function openPicker(group){const prefix=group.toUpperCase()+' ';const matches=catalog.filter(x=>x.supply.toUpperCase().startsWith(prefix)).sort((a,b)=>a.supply.localeCompare(b.supply,undefined,{numeric:true}));$('pickerTitle').textContent='Choose '+group+' size';const buttons=$('sizeButtons');buttons.replaceChildren();if(!matches.length){const p=document.createElement('p');p.textContent='No matching '+group+' supplies found in the catalog.';buttons.append(p);}for(const item of matches){const btn=document.createElement('button');btn.type='button';btn.textContent=item.supply.slice(prefix.length)||item.supply;btn.addEventListener('click',()=>{addItem(item);$('picker').hidden=true;});buttons.append(btn);}$('picker').hidden=false;$('picker').scrollIntoView({behavior:'smooth',block:'nearest'});}
-function renderCatalog(){const q=$('search').value.trim().toLowerCase();const matches=catalog.filter(x=>[x.category,x.supply,x.supplyID].some(v=>v.toLowerCase().includes(q)));$('catalogCount').textContent=`Showing ${Math.min(matches.length,60)} of ${matches.length} matching supplies${q?'':' (first 60 displayed)'}.`;const root=$('catalog');root.replaceChildren();for(const item of matches.slice(0,60)){const row=document.createElement('div');row.className='item';const desc=document.createElement('div');const strong=document.createElement('strong');strong.textContent=item.supply;const small=document.createElement('small');small.textContent=item.category+(item.supplyID?' · '+item.supplyID:'');desc.append(strong,small);const btn=document.createElement('button');btn.type='button';btn.textContent='+ Add';btn.addEventListener('click',()=>addItem(item));row.append(desc,btn);root.append(row);}if(!matches.length)root.textContent='No matching supplies.';}
-function renderReview(){const root=$('review');root.replaceChildren();let total=0;for(const [key,item] of selected){total+=item.quantity;const row=document.createElement('div');row.className='item';const desc=document.createElement('div');const name=document.createElement('strong');name.textContent=item.supply;const sub=document.createElement('small');sub.textContent=item.category;desc.append(name,sub);const controls=document.createElement('div');controls.className='controls';const minus=document.createElement('button');minus.textContent='−';minus.type='button';minus.setAttribute('aria-label','Decrease '+item.supply);minus.addEventListener('click',()=>changeQty(key,-1));const qty=document.createElement('span');qty.textContent=item.quantity;const plus=document.createElement('button');plus.textContent='+';plus.type='button';plus.setAttribute('aria-label','Increase '+item.supply);plus.addEventListener('click',()=>changeQty(key,1));const remove=document.createElement('button');remove.textContent='Remove';remove.type='button';remove.className='danger';
-remove.addEventListener('click', () => {
-  resetPendingSubmission();
-  selected.delete(key);
-  renderReview();
-});
-controls.append(minus,qty,plus,remove);row.append(desc,controls);root.append(row);}if(!selected.size)root.textContent='No supplies selected yet.';
-$('total').textContent = total + ' unit' + (total === 1 ? '' : 's');
-updateSubmitButton();
+function handleId(raw){
+  if(!canEdit())return;
+  const id=String(raw||'').trim().toUpperCase();if(!id)return;
+  if(['GROUP-ETT','GROUP-NPA','GROUP-OPA'].includes(id)){openPicker(id.slice(6));return;}
+  const item=catalog.find(x=>x.supplyID.toUpperCase()===id);
+  if(!item){status('scanStatus','Supply ID '+id+' was not found in the usable catalog.','error');return;}
+  addItem(item);
 }
-
-
-function changeQty(key, delta) {
-  const item = selected.get(key);
-  if (!item) return;
-
-  resetPendingSubmission();
-
-  item.quantity += delta;
-
-  if (item.quantity <= 0) {
-    selected.delete(key);
+function openPicker(group){
+  if(!canEdit())return;
+  const prefix=group.toUpperCase()+' ',matches=catalog.filter(x=>x.supply.toUpperCase().startsWith(prefix))
+    .sort((a,b)=>a.supply.localeCompare(b.supply,undefined,{numeric:true}));
+  $('pickerTitle').textContent='Choose '+group+' size';const buttons=$('sizeButtons');buttons.replaceChildren();
+  if(!matches.length){const p=document.createElement('p');p.textContent='No matching '+group+' supplies found in the catalog.';buttons.append(p);}
+  for(const item of matches){const btn=document.createElement('button');btn.type='button';btn.textContent=item.supply.slice(prefix.length)||item.supply;
+    btn.addEventListener('click',()=>{addItem(item);$('picker').hidden=true;});buttons.append(btn);}
+  $('picker').hidden=false;$('picker').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function renderCatalog(){
+  const q=$('search').value.trim().toLowerCase(),matches=catalog.filter(x=>[x.category,x.supply,x.supplyID].some(v=>v.toLowerCase().includes(q)));
+  $('catalogCount').textContent=`Showing ${Math.min(matches.length,60)} of ${matches.length} matching supplies${q?'':' (first 60 displayed)'}.`;
+  const root=$('catalog');root.replaceChildren();
+  for(const item of matches.slice(0,60)){
+    const row=document.createElement('div');row.className='item';const desc=document.createElement('div');
+    const strong=document.createElement('strong');strong.textContent=item.supply;
+    const small=document.createElement('small');small.textContent=item.category+(item.supplyID?' · '+item.supplyID:'');desc.append(strong,small);
+    const btn=document.createElement('button');btn.type='button';btn.textContent='+ Add';btn.disabled=editingLocked();
+    btn.addEventListener('click',()=>addItem(item));row.append(desc,btn);root.append(row);
   }
-
-  renderReview();
+  if(!matches.length)root.textContent='No matching supplies.';
 }
-
-function onScan(decoded){const value=String(decoded||'').trim();if(!value)return;const now=Date.now();if(value===lastScan&&now-lastScanAt<3000)return;lastScan=value;lastScanAt=now;$('supplyId').value=value;handleId(value);}
-async function startScanner(){if(starting||running)return;if(typeof Html5Qrcode==='undefined'){status('scanStatus','QR scanner library did not load.','error');return;}starting=true;$('start').disabled=true;status('scanStatus','Starting camera...');try{scanner=new Html5Qrcode('reader');await scanner.start({facingMode:'environment'},{fps:10,qrbox:(w,h)=>{const n=Math.floor(Math.min(w,h)*.75);return{width:n,height:n};}},onScan,()=>{});running=true;$('start').hidden=true;$('stop').hidden=false;status('scanStatus','Camera ready. Scan a supply QR code.','good');}catch(err){status('scanStatus','Camera error: '+(err.message||String(err)),'error');try{scanner?.clear();}catch(_){}scanner=null;}finally{starting=false;$('start').disabled=false;}}
-async function stopScanner(){if(!running||!scanner)return;$('stop').disabled=true;try{await scanner.stop();scanner.clear();}catch(err){console.error(err);}finally{scanner=null;running=false;$('start').hidden=false;$('stop').hidden=true;$('stop').disabled=false;status('scanStatus','Camera stopped.');}}
+function renderReview(){
+  const root=$('review');root.replaceChildren();let total=0;
+  for(const [key,item] of selected){
+    total+=item.quantity;const row=document.createElement('div');row.className='item';const desc=document.createElement('div');
+    const name=document.createElement('strong');name.textContent=item.supply;
+    const sub=document.createElement('small');sub.textContent=item.category;desc.append(name,sub);
+    const controls=document.createElement('div');controls.className='controls';
+    const minus=document.createElement('button');minus.textContent='−';minus.type='button';minus.disabled=editingLocked();
+    minus.setAttribute('aria-label','Decrease '+item.supply);minus.addEventListener('click',()=>changeQty(key,-1));
+    const qty=document.createElement('span');qty.textContent=item.quantity;
+    const plus=document.createElement('button');plus.textContent='+';plus.type='button';plus.disabled=editingLocked();
+    plus.setAttribute('aria-label','Increase '+item.supply);plus.addEventListener('click',()=>changeQty(key,1));
+    const remove=document.createElement('button');remove.textContent='Remove';remove.type='button';remove.className='danger';remove.disabled=editingLocked();
+    remove.addEventListener('click',()=>{if(!resetPendingSubmission())return;selected.delete(key);renderReview();});
+    controls.append(minus,qty,plus,remove);row.append(desc,controls);root.append(row);
+  }
+  if(!selected.size)root.textContent='No supplies selected yet.';
+  $('total').textContent=total+' unit'+(total===1?'':'s');updateSubmitButton();
+}
+function changeQty(key,delta){
+  if(!resetPendingSubmission())return;
+  const item=selected.get(key);if(!item)return;
+  const next=item.quantity+delta;if(next>50){status('reviewStatus','Maximum quantity is 50 per supply.','error');$('reviewStatus').hidden=false;return;}
+  if(next<=0)selected.delete(key);else item.quantity=next;renderReview();
+}
+function onScan(decoded){
+  if(editingLocked())return;
+  const value=String(decoded||'').trim();if(!value)return;
+  const now=Date.now();if(value===lastScan&&now-lastScanAt<3000)return;
+  lastScan=value;lastScanAt=now;$('supplyId').value=value;handleId(value);
+}
+async function startScanner(){
+  if(starting||running)return;
+  if(typeof Html5Qrcode==='undefined'){status('scanStatus','QR scanner library did not load.','error');return;}
+  starting=true;$('start').disabled=true;status('scanStatus','Starting camera...');
+  try{
+    scanner=new Html5Qrcode('reader');
+    await scanner.start({facingMode:'environment'},{fps:10,qrbox:(w,h)=>{const n=Math.floor(Math.min(w,h)*.75);return{width:n,height:n};}},onScan,()=>{});
+    running=true;$('start').hidden=true;$('stop').hidden=false;status('scanStatus','Camera ready. Scan a supply QR code.','good');
+  }catch(err){status('scanStatus','Camera error: '+(err.message||String(err)),'error');try{scanner?.clear();}catch(_){}scanner=null;}
+  finally{starting=false;$('start').disabled=false;}
+}
+async function stopScanner(){
+  if(!running||!scanner)return;$('stop').disabled=true;
+  try{await scanner.stop();scanner.clear();}catch(err){console.error(err);}
+  finally{scanner=null;running=false;$('start').hidden=false;$('stop').hidden=true;$('stop').disabled=false;status('scanStatus','Camera stopped.');}
+}
 $('quickAddIvStart').addEventListener('click',()=>addUsageBundle([{supply:'IV Start Kits',quantity:1},{supply:'Saline Flush',quantity:1},{supply:'Extension Set',quantity:1}]));
 $('quickAdd500Ns').addEventListener('click',()=>addUsageBundle([{supply:'500ml NS',quantity:1},{supply:'IV Tubing',quantity:1}]));
-$('start').addEventListener('click',startScanner);$('stop').addEventListener('click',stopScanner);$('addId').addEventListener('click',()=>{handleId($('supplyId').value);$('supplyId').value='';});$('supplyId').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('addId').click();}});$('closePicker').addEventListener('click',()=>{$('picker').hidden=true;});$('search').addEventListener('input',renderCatalog);document.querySelectorAll('[data-group]').forEach(btn=>btn.addEventListener('click',()=>openPicker(btn.dataset.group)));loadData();
+$('start').addEventListener('click',startScanner);
+$('stop').addEventListener('click',stopScanner);
+$('addId').addEventListener('click',()=>{handleId($('supplyId').value);if(!editingLocked())$('supplyId').value='';});
+$('supplyId').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('addId').click();}});
+$('closePicker').addEventListener('click',()=>{$('picker').hidden=true;});
+$('search').addEventListener('input',renderCatalog);
+document.querySelectorAll('[data-group]').forEach(btn=>btn.addEventListener('click',()=>openPicker(btn.dataset.group)));
+$('submit').addEventListener('click',submitUsageToLCEMS);
+restorePending();renderReview();loadData();
 </script>
 </body></html>
