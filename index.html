@@ -278,7 +278,7 @@ async function testApiConnection() {
 
   const url =
     "https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP7caqBiBWnLqMCPR_10GXgkn9B_dX0xeHi7tL0M_w/exec" +
-    "?api=v1&action=health";
+    "?api=v1&action=bootstrap";
 
   try {
     const response = await fetch(url, {
@@ -288,9 +288,17 @@ async function testApiConnection() {
 
     const data = await response.json();
 
-    output.textContent = data.ok
-      ? "SUCCESS: GitHub Pages can read the API!"
-      : "API returned an error.";
+    if (data.ok && data.data) {
+  const catalog = data.data.supplies || [];
+
+  output.textContent =
+    "SUCCESS! Loaded " +
+    catalog.length +
+    " supplies from LCEMS.";
+} else {
+  output.textContent =
+    "API returned an error.";
+}
 
   } catch (error) {
     console.error("API connection test:", error);
