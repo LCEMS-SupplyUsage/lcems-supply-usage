@@ -22,7 +22,31 @@
 const API='https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP7caqBiBWnLqMCPR_10GXgkn9B_dX0xeHi7tL0M_w/exec';
 const $=id=>document.getElementById(id);
 let catalog=[],scanner=null,starting=false,running=false,lastScan='',lastScanAt=0;
-const selected=new Map();
+
+async function testPostConnection() {
+  const body = JSON.stringify({
+    api: "v1",
+    action: "connectionTest"
+  });
+
+  try {
+    const response = await fetch(API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=UTF-8"
+      },
+      body,
+      redirect: "follow"
+    });
+
+    const result = await response.json();
+    console.log("POST connection response:", result);
+  } catch (error) {
+    console.error("POST connection failed:", error);
+  }
+}
+
+	const selected=new Map();
 	
 let pendingSubmissionId = null;
 
