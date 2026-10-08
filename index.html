@@ -11,11 +11,11 @@
 <body><main>
 <header><h1>🚑 LCEMS</h1><p>Supply Usage · Scanner &amp; Review</p></header>
 <section class="card"><h2>1. Usage Details</h2><div id="loadStatus" class="status">Loading LCEMS data...</div><div class="grid"><div><label for="base">Base</label><select id="base"><option value="">Select base</option></select></div><div><label for="employee">Employee</label><select id="employee"><option value="">Select employee</option></select></div></div><label for="truck">Truck / Unit (optional)</label><input id="truck" autocomplete="off" placeholder="Truck or unit number"></section>
-<section class="card"><h2>2. Scan Supplies</h2><p class="muted">The camera stays open between scans. Repeated scans of the same code are briefly ignored to prevent accidental duplicates.</p><button id="start" class="primary" type="button">📷 Start scanning</button> <button id="stop" type="button" hidden>Stop camera</button><div id="reader"></div><div id="scanStatus" class="status">Camera not started.</div><div id="picker" class="picker" hidden><strong id="pickerTitle">Choose size</strong><div id="sizeButtons" class="sizes"></div><button id="closePicker" type="button">Cancel</button></div><label for="supplyId">Or enter a Supply ID</label><div class="row"><input id="supplyId" placeholder="SUP-0001 or GROUP-ETT" autocomplete="off"><button id="addId" class="primary small-button" type="button">Add ID</button></div></section>
+<section class="card"><h2>2. Scan Supplies</h2><p class="muted">After a successful scan, the camera pauses. Tap Scan Next Supply when you are ready to continue.</p><button id="start" class="primary" type="button">📷 Start scanning</button> <button id="stop" type="button" hidden>Stop camera</button> <button id="scanNext" class="primary" type="button" hidden>Scan Next Supply</button><div id="reader"></div><div id="scanStatus" class="status">Camera not started.</div><div id="picker" class="picker" hidden><strong id="pickerTitle">Choose size</strong><div id="sizeButtons" class="sizes"></div><button id="closePicker" type="button">Cancel</button></div><label for="supplyId">Or enter a Supply ID</label><div class="row"><input id="supplyId" placeholder="SUP-0001 or GROUP-ETT" autocomplete="off"><button id="addId" class="primary small-button" type="button">Add ID</button></div></section>
 <section class="card"><h2>3. Search Supply Catalog</h2><input id="search" type="search" placeholder="Search supply name, category, or ID"><p class="muted" id="catalogCount">Loading catalog...</p><div id="catalog" class="catalog"></div></section>
 <section class="card"><h2>4. Quick Add</h2><p class="muted">Common actions</p><div class="row"><button type="button" id="quickAddIvStart">💉 IV Start</button><button type="button" id="quickAdd500Ns">💧 500ml NS + Tubing</button></div><p class="muted">Grouped supplies</p><div class="row"><button type="button" data-group="ETT">ETT sizes</button><button type="button" data-group="NPA">NPA sizes</button><button type="button" data-group="OPA">OPA sizes</button></div><div id="quickAddStatus" class="status" hidden></div></section>
-<section class="card"><h2>5. Review Supplies <span id="total" class="pill">0 units</span></h2><div id="review" class="muted">No supplies selected yet.</div><div id="reviewStatus" class="status" hidden></div><button id="submit" class="primary" type="button" disabled>Submit Supply Usage (not enabled yet)</button><p id="modeNotice" class="muted">Testing mode: submissions are disabled. The existing LCEMS portal remains unchanged.</p></section>
-<div class="footer">LCEMS Supply Usage · Pre-launch verification</div>
+<section class="card"><h2>5. Review Supplies <span id="total" class="pill">0 units</span></h2><div id="review" class="muted">No supplies selected yet.</div><div id="reviewStatus" class="status" hidden></div><button id="submit" class="primary" type="button" disabled>Submit Supply Usage (not enabled yet)</button><p id="modeNotice" class="muted">Supply usage is submitted to the LCEMS Usage Log and Usage Summary.</p></section>
+<div class="footer">LCEMS Supply Usage · Live scanner</div>
 </main>
 <script>
 'use strict';
@@ -24,7 +24,7 @@ const API='https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP
 const SUBMISSIONS_ENABLED=true;
 const STORAGE_KEY='lcems_usage_pending_v1';
 const $=id=>document.getElementById(id);
-let catalog=[],scanner=null,starting=false,running=false,lastScan='',lastScanAt=0;
+let catalog=[],scanner=null,starting=false,running=false,scanPaused=false,lastScan='',lastScanAt=0;
 const selected=new Map();
 let submissionInProgress=false;
 let pendingSubmissionData=null;
@@ -172,12 +172,14 @@ function addUsageBundle(entries){
   status('quickAddStatus','Added '+resolved.map(x=>x.item.supply+' × '+x.quantity).join(', ')+'.','good');$('quickAddStatus').hidden=false;
 }
 function handleId(raw){
-  if(!canEdit())return;
-  const id=String(raw||'').trim().toUpperCase();if(!id)return;
-  if(['GROUP-ETT','GROUP-NPA','GROUP-OPA'].includes(id)){openPicker(id.slice(6));return;}
+  if(!canEdit())return false;
+  const id=String(raw||'').trim().toUpperCase();if(!id)return false;
+  if(['GROUP-ETT','GROUP-NPA','GROUP-OPA'].includes(id)){openPicker(id.slice(6));return true;}
   const item=catalog.find(x=>x.supplyID.toUpperCase()===id);
-  if(!item){status('scanStatus','Supply ID '+id+' was not found in the usable catalog.','error');return;}
+  if(!item){status('scanStatus','Supply ID '+id+' was not found in the usable catalog.','error');return false;}
+  const before=selected.get(keyFor(item))?.quantity||0;
   addItem(item);
+  return (selected.get(keyFor(item))?.quantity||0)>before;
 }
 function openPicker(group){
   if(!canEdit())return;
@@ -228,10 +230,36 @@ function changeQty(key,delta){
   if(next<=0)selected.delete(key);else item.quantity=next;renderReview();
 }
 function onScan(decoded){
-  if(editingLocked())return;
+  if(editingLocked()||scanPaused||!running)return;
   const value=String(decoded||'').trim();if(!value)return;
   const now=Date.now();if(value===lastScan&&now-lastScanAt<3000)return;
-  lastScan=value;lastScanAt=now;$('supplyId').value=value;handleId(value);
+  // Lock the callback before changing the UI, to prevent multiple frames adding the same item.
+  scanPaused=true;
+  lastScan=value;lastScanAt=now;
+  $('supplyId').value=value;
+  const added=handleId(value);
+  if(!added){scanPaused=false;return;}
+  try{
+    scanner.pause(true);
+    $('scanNext').hidden=false;
+    $('scanNext').disabled=false;
+    if(value.startsWith('GROUP-'))status('scanStatus','Choose a size, then tap Scan Next Supply.','good');
+    else status('scanStatus','✓ Added successfully. Tap Scan Next Supply when ready.','good');
+  }catch(error){
+    scanPaused=false;
+    status('scanStatus','Added, but camera could not pause: '+error.message,'error');
+  }
+}
+function scanNextSupply(){
+  if(!running||!scanner||!scanPaused)return;
+  try{
+    scanner.resume();
+    scanPaused=false;
+    lastScan='';lastScanAt=0;
+    $('scanNext').hidden=true;
+    $('supplyId').value='';
+    status('scanStatus','Camera ready. Scan your next supply.','good');
+  }catch(error){status('scanStatus','Could not resume camera: '+error.message,'error');}
 }
 async function startScanner(){
   if(starting||running)return;
@@ -240,19 +268,20 @@ async function startScanner(){
   try{
     scanner=new Html5Qrcode('reader');
     await scanner.start({facingMode:'environment'},{fps:10,qrbox:(w,h)=>{const n=Math.floor(Math.min(w,h)*.75);return{width:n,height:n};}},onScan,()=>{});
-    running=true;$('start').hidden=true;$('stop').hidden=false;status('scanStatus','Camera ready. Scan a supply QR code.','good');
+    running=true;scanPaused=false;$('scanNext').hidden=true;$('start').hidden=true;$('stop').hidden=false;status('scanStatus','Camera ready. Scan a supply QR code.','good');
   }catch(err){status('scanStatus','Camera error: '+(err.message||String(err)),'error');try{scanner?.clear();}catch(_){}scanner=null;}
   finally{starting=false;$('start').disabled=false;}
 }
 async function stopScanner(){
   if(!running||!scanner)return;$('stop').disabled=true;
   try{await scanner.stop();scanner.clear();}catch(err){console.error(err);}
-  finally{scanner=null;running=false;$('start').hidden=false;$('stop').hidden=true;$('stop').disabled=false;status('scanStatus','Camera stopped.');}
+  finally{scanner=null;running=false;scanPaused=false;$('scanNext').hidden=true;$('start').hidden=false;$('stop').hidden=true;$('stop').disabled=false;status('scanStatus','Camera stopped.');}
 }
 $('quickAddIvStart').addEventListener('click',()=>addUsageBundle([{supply:'IV Start Kits',quantity:1},{supply:'Saline Flush',quantity:1},{supply:'Extension Set',quantity:1}]));
 $('quickAdd500Ns').addEventListener('click',()=>addUsageBundle([{supply:'500ml NS',quantity:1},{supply:'IV Tubing',quantity:1}]));
 $('start').addEventListener('click',startScanner);
 $('stop').addEventListener('click',stopScanner);
+$('scanNext').addEventListener('click',scanNextSupply);
 $('addId').addEventListener('click',()=>{handleId($('supplyId').value);if(!editingLocked())$('supplyId').value='';});
 $('supplyId').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('addId').click();}});
 $('closePicker').addEventListener('click',()=>{$('picker').hidden=true;});
