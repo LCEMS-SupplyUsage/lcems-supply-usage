@@ -35,6 +35,48 @@ function getSubmissionId() {
   return pendingSubmissionId;
 }
 
+function buildUsageSubmission() {
+  const base = $('base').value.trim();
+  const employee = $('employee').value.trim();
+  const truckNumber = $('truck').value.trim();
+
+  const items = Array.from(selected.values()).map(item => ({
+    category: item.category,
+    supply: item.supply,
+    quantity: item.quantity
+  }));
+
+  if (!base) {
+    throw new Error("Please select your base.");
+  }
+
+  if (!employee) {
+    throw new Error("Please select your name.");
+  }
+
+  if (!items.length) {
+    throw new Error("Please add at least one supply.");
+  }
+
+  if (items.some(item =>
+    !Number.isSafeInteger(item.quantity) ||
+    item.quantity < 1 ||
+    item.quantity > 50
+  )) {
+    throw new Error(
+      "Each supply must have a quantity between 1 and 50."
+    );
+  }
+
+  return {
+    clientSubmissionId: getSubmissionId(),
+    base,
+    employee,
+    truckNumber,
+    items
+  };
+}
+
 function status(id,message,kind=''){const el=$(id);el.textContent=message;el.className='status'+(kind?' '+kind:'');}
 function values(input){return Array.isArray(input)?input.map(v=>typeof v==='string'?v:(v&&typeof v==='object'?(v.name||v.label||v.value||''):'' )).map(v=>String(v).trim()).filter(Boolean):[];}
 function populate(id,arr,placeholder){const select=$(id);select.replaceChildren(new Option(placeholder,''));for(const v of [...new Set(values(arr))])select.add(new Option(v,v));}
