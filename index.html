@@ -50,6 +50,8 @@ async function testPostConnection() {
 	
 let pendingSubmissionId = null;
 
+let submissionInProgress = false;
+
 function getSubmissionId() {
   if (!pendingSubmissionId) {
     pendingSubmissionId =
