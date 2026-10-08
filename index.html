@@ -208,6 +208,23 @@ if (!data.ok || !data.result?.success) {
 
 
 
+const SUBMISSIONS_ENABLED = false;
+
+function updateSubmitButton() {
+  const button = $('submit');
+
+  button.disabled =
+    !SUBMISSIONS_ENABLED ||
+    submissionInProgress ||
+    selected.size === 0;
+
+  button.textContent = submissionInProgress
+    ? 'Submitting...'
+    : submissionNeedsConfirmation
+      ? 'Retry Previous Submission'
+      : 'Submit Supply Usage';
+}
+
 function resetPendingSubmission() {
   if (submissionInProgress) {
     throw new Error(
