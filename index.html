@@ -23,6 +23,18 @@ const API='https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP
 const $=id=>document.getElementById(id);
 let catalog=[],scanner=null,starting=false,running=false,lastScan='',lastScanAt=0;
 const selected=new Map();
+	
+let pendingSubmissionId = null;
+
+function getSubmissionId() {
+  if (!pendingSubmissionId) {
+    pendingSubmissionId =
+      "LCEMS_" + crypto.randomUUID().replace(/-/g, "");
+  }
+
+  return pendingSubmissionId;
+}
+
 function status(id,message,kind=''){const el=$(id);el.textContent=message;el.className='status'+(kind?' '+kind:'');}
 function values(input){return Array.isArray(input)?input.map(v=>typeof v==='string'?v:(v&&typeof v==='object'?(v.name||v.label||v.value||''):'' )).map(v=>String(v).trim()).filter(Boolean):[];}
 function populate(id,arr,placeholder){const select=$(id);select.replaceChildren(new Option(placeholder,''));for(const v of [...new Set(values(arr))])select.add(new Option(v,v));}
