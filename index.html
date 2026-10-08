@@ -52,6 +52,8 @@ let pendingSubmissionId = null;
 
 let submissionInProgress = false;
 
+let submissionNeedsConfirmation = false;
+
 function getSubmissionId() {
   if (!pendingSubmissionId) {
     pendingSubmissionId =
@@ -186,10 +188,19 @@ async function submitUsageToLCEMS() {
 }
 
 
+
 function resetPendingSubmission() {
   if (submissionInProgress) {
     throw new Error(
       "Please wait until the current submission finishes."
+    );
+  }
+
+  if (submissionNeedsConfirmation) {
+    throw new Error(
+      "Your previous submission has not been confirmed. " +
+      "Please retry or contact the supply administrator " +
+      "before changing supplies."
     );
   }
 
