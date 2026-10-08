@@ -109,6 +109,82 @@ function populate(id,arr,placeholder){const select=$(id);select.replaceChildren(
 function normalized(item){return {category:String(item?.category||'').trim(),supply:String(item?.supply||'').trim(),supplyID:String(item?.supplyID||'').trim(),trackInventory:item?.trackInventory};}
 async function loadData(){try{const response=await fetch(API+'?api=v1&action=bootstrap',{redirect:'follow'});if(!response.ok)throw Error('HTTP '+response.status);const json=await response.json();if(!json.ok||!json.data)throw Error(json.error?.message||'Invalid API response');const data=json.data;catalog=(Array.isArray(data.supplies)?data.supplies:[]).map(normalized).filter(x=>x.category&&x.supply&&x.trackInventory!==false&&String(x.trackInventory).toLowerCase()!=='false');populate('base',data.bases,'Select base');populate('employee',data.usageEmployees,'Select employee');status('loadStatus',`Loaded ${catalog.length} usable supplies from LCEMS. Select your base and employee.`, 'good');renderCatalog();}catch(err){status('loadStatus','Could not load LCEMS data: '+err.message,'error');$('catalogCount').textContent='Catalog unavailable.';}}
 
+async function submitUsageToLCEMS() {
+  if (submissionInProgress) return;
+
+  let formData;
+
+  try {
+    formData = buildUsageSubmission();
+  } catch (error) {
+    status('reviewStatus', error.message, 'error');
+    $('reviewStatus').hidden = false;
+    return;
+  }
+
+  submissionInProgress = true;
+  $('submit').disabled = true;
+
+  status(
+    'reviewStatus',
+    'Submitting supply usage to LCEMS...',
+    ''
+  );
+  $('reviewStatus').hidden = false;
+
+  try {
+    const response = await fetch(API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8'
+      },
+      body: JSON.stringify({
+        api: 'v1',
+        action: 'submitUsage',
+        formData
+      }),
+      redirect: 'follow'
+    });
+
+    if (!response.ok) {
+      throw new Error('Server returned HTTP ' + response.status);
+    }
+
+    const data = await response.json();
+
+    if (!data.ok || !data.result?.success) {
+      throw new Error(
+        data.result?.message ||
+        data.error?.message ||
+        'LCEMS did not confirm the submission.'
+      );
+    }
+
+    status(
+      'reviewStatus',
+      data.result.message || 'Supply usage recorded successfully.',
+      'good'
+    );
+
+    selected.clear();
+    pendingSubmissionId = null;
+    renderReview();
+
+  } catch (error) {
+    status(
+      'reviewStatus',
+      'Submission could not be confirmed: ' +
+      error.message +
+      '. Do not start a new transaction until this is checked.',
+      'error'
+    );
+
+  } finally {
+    submissionInProgress = false;
+    $('submit').disabled = true;
+  }
+}
+
 function resetPendingSubmission() {
   pendingSubmissionId = null;
 }
