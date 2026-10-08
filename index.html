@@ -289,7 +289,11 @@ remove.addEventListener('click', () => {
   selected.delete(key);
   renderReview();
 });
-controls.append(minus,qty,plus,remove);row.append(desc,controls);root.append(row);}if(!selected.size)root.textContent='No supplies selected yet.';$('total').textContent=total+' unit'+(total===1?'':'s');}
+controls.append(minus,qty,plus,remove);row.append(desc,controls);root.append(row);}if(!selected.size)root.textContent='No supplies selected yet.';
+$('total').textContent = total + ' unit' + (total === 1 ? '' : 's');
+updateSubmitButton();
+}
+
 
 function changeQty(key, delta) {
   const item = selected.get(key);
