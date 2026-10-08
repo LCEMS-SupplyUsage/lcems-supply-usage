@@ -3,30 +3,271 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
   <title>LCEMS Supply Usage</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
+    * { box-sizing: border-box; }
+
     body {
-      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
       background: #f3f6fa;
       color: #172b4d;
-      text-align: center;
-      padding: 40px 20px;
+      font-family: Arial, sans-serif;
     }
+
+    .container {
+      max-width: 550px;
+      margin: auto;
+    }
+
+    h1 { margin-bottom: 5px; }
+
     .card {
       background: white;
-      padding: 30px;
-      border-radius: 16px;
-      max-width: 450px;
-      margin: 40px auto;
+      padding: 20px;
+      border-radius: 14px;
+      margin-top: 16px;
+      box-shadow: 0 2px 8px #0000000a;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 13px 18px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: #174b78;
+      color: white;
+      width: 100%;
+    }
+
+    .secondary {
+      background: #e5ebf2;
+      color: #172b4d;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+    }
+
+    #reader {
+      width: 100%;
+      margin-top: 15px;
+    }
+
+    #status {
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .scan-item {
+      padding: 12px 0;
+      border-bottom: 1px solid #e5ebf2;
+      overflow-wrap: anywhere;
+    }
+
+    .scan-item:last-child {
+      border-bottom: none;
+    }
+
+    .quantity {
+      font-weight: bold;
+      margin-left: 8px;
     }
   </style>
 </head>
+
 <body>
-  <div class="card">
+  <div class="container">
     <h1>🚑 LCEMS</h1>
-    <h2>Supply Usage</h2>
-    <p>Your new supply scanner is coming together!</p>
+    <p>Supply Usage Scanner</p>
+
+    <div class="card">
+      <h2>Scan Supplies</h2>
+      <p>Keep the camera open while scanning multiple QR codes.</p>
+
+      <button id="startButton"
+              class="primary"
+              onclick="startScanner()">
+        📷 Start Scanning
+      </button>
+
+      <button id="stopButton"
+              class="secondary"
+              onclick="stopScanner()"
+              hidden>
+        Stop Scanner
+      </button>
+
+      <div id="reader"></div>
+      <p id="status">Camera not started.</p>
+    </div>
+
+    <div class="card">
+      <h2>Scanned Supplies</h2>
+      <div id="scanList">
+        No supplies scanned yet.
+      </div>
+    </div>
   </div>
+
+  <script>
+    let scanner = null;
+    let scannerRunning = false;
+    let scannerStarting = false;
+
+    const scannedSupplies = new Map();
+
+    let lastScan = "";
+    let lastScanTime = 0;
+
+    const startButton =
+      document.getElementById("startButton");
+
+    const stopButton =
+      document.getElementById("stopButton");
+
+    const status =
+      document.getElementById("status");
+
+    async function startScanner() {
+      if (scannerRunning || scannerStarting) return;
+
+      if (typeof Html5Qrcode === "undefined") {
+        status.textContent =
+          "QR scanner library could not load.";
+        return;
+      }
+
+      scannerStarting = true;
+      startButton.disabled = true;
+      status.textContent = "Starting camera...";
+
+      try {
+        scanner = new Html5Qrcode("reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: (width, height) => {
+              const size = Math.floor(
+                Math.min(width, height) * 0.75
+              );
+
+              return {
+                width: size,
+                height: size
+              };
+            }
+          },
+          onScanSuccess,
+          () => {}
+        );
+
+        scannerRunning = true;
+        startButton.hidden = true;
+        stopButton.hidden = false;
+
+        status.textContent =
+          "Camera ready. Scan a supply QR code.";
+
+      } catch (error) {
+        status.textContent =
+          "Camera error: " +
+          (error.message || String(error));
+
+        console.error(error);
+
+        if (scanner) {
+          try {
+            scanner.clear();
+          } catch (_) {}
+          scanner = null;
+        }
+      } finally {
+        scannerStarting = false;
+        startButton.disabled = false;
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      const value = String(decodedText || "").trim();
+
+      if (!value) return;
+
+      const now = Date.now();
+
+      // Prevent rapid duplicate scans of the same code.
+      if (
+        value === lastScan &&
+        now - lastScanTime < 3000
+      ) {
+        return;
+      }
+
+      lastScan = value;
+      lastScanTime = now;
+
+      // Temporary test: record the QR's actual contents.
+      const current = scannedSupplies.get(value) || 0;
+      scannedSupplies.set(value, current + 1);
+
+      renderScans();
+
+      status.textContent = "Scanned: " + value;
+
+      // Camera stays open for the next supply.
+    }
+
+    function renderScans() {
+      const list = document.getElementById("scanList");
+      list.innerHTML = "";
+
+      for (const [value, quantity] of scannedSupplies) {
+        const row = document.createElement("div");
+        row.className = "scan-item";
+
+        const name = document.createElement("span");
+        name.textContent = value;
+
+        const count = document.createElement("span");
+        count.className = "quantity";
+        count.textContent = "Qty: " + quantity;
+
+        row.appendChild(name);
+        row.appendChild(count);
+        list.appendChild(row);
+      }
+    }
+
+    async function stopScanner() {
+      if (!scannerRunning || !scanner) return;
+
+      try {
+        await scanner.stop();
+        scanner.clear();
+      } catch (error) {
+        console.error(error);
+      } finally {
+        scannerRunning = false;
+        scanner = null;
+
+        startButton.hidden = false;
+        stopButton.hidden = true;
+        status.textContent = "Scanner stopped.";
+      }
+    }
+  </script>
 </body>
 </html>
