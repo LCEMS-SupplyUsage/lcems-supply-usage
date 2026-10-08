@@ -1,321 +1,43 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1">
-  <title>LCEMS Supply Usage</title>
-
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      padding: 20px;
-      background: #f3f6fa;
-      color: #172b4d;
-      font-family: Arial, sans-serif;
-    }
-
-    .container {
-      max-width: 550px;
-      margin: auto;
-    }
-
-    h1 { margin-bottom: 5px; }
-
-    .card {
-      background: white;
-      padding: 20px;
-      border-radius: 14px;
-      margin-top: 16px;
-      box-shadow: 0 2px 8px #0000000a;
-    }
-
-    button {
-      border: none;
-      border-radius: 10px;
-      padding: 13px 18px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    .primary {
-      background: #174b78;
-      color: white;
-      width: 100%;
-    }
-
-    .secondary {
-      background: #e5ebf2;
-      color: #172b4d;
-      width: 100%;
-      margin-top: 10px;
-    }
-
-    button:disabled {
-      opacity: 0.6;
-    }
-
-    #reader {
-      width: 100%;
-      margin-top: 15px;
-    }
-
-    #status {
-      margin-top: 12px;
-      font-size: 14px;
-    }
-
-    .scan-item {
-      padding: 12px 0;
-      border-bottom: 1px solid #e5ebf2;
-      overflow-wrap: anywhere;
-    }
-
-    .scan-item:last-child {
-      border-bottom: none;
-    }
-
-    .quantity {
-      font-weight: bold;
-      margin-left: 8px;
-    }
-  </style>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCEMS | Supply Usage</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#19334b;background:#f2f5f8}*{box-sizing:border-box}body{margin:0;padding:16px}main{max-width:760px;margin:auto}header{background:#153f63;color:white;padding:22px;border-radius:16px}header h1{margin:0;font-size:1.7rem}header p{margin:6px 0 0;color:#dce8f2}.card{background:white;border-radius:14px;padding:18px;margin:15px 0;box-shadow:0 2px 9px #102c4710}h2{font-size:1.1rem;margin:0 0 14px}label{display:block;font-weight:650;font-size:.91rem;margin:12px 0 6px}input,select{width:100%;font:inherit;padding:12px;border:1px solid #b9c9d5;border-radius:9px;background:white;color:#19334b}button{font:inherit;font-weight:600;border:0;border-radius:9px;padding:11px 14px;cursor:pointer;background:#e6edf3;color:#19334b}button.primary{background:#16527d;color:white}button.danger{background:#fff0ef;color:#92352d}button:disabled{opacity:.55;cursor:not-allowed}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.muted{color:#607789;font-size:.9rem}.status{background:#eaf2f8;border-radius:8px;padding:11px;margin:12px 0;overflow-wrap:anywhere}.status.error{background:#fff0ef;color:#842c26}.status.good{background:#e7f5ed;color:#165b38}#reader{width:100%;max-width:520px;margin:12px auto}#reader video{border-radius:10px}.item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #e4ebef}.item:last-child{border-bottom:0}.item strong{display:block}.item small{color:#617588}.item .controls{display:flex;align-items:center;gap:8px;flex-shrink:0}.controls button{min-width:38px}.controls span{min-width:24px;text-align:center;font-weight:700}.picker{border:1px solid #b9c9d5;background:#f6f9fb;padding:14px;border-radius:10px;margin-top:12px}.sizes{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.sizes button{border:1px solid #a6bdce}.hidden,[hidden]{display:none!important}.catalog{max-height:360px;overflow:auto}.pill{font-size:.75rem;border-radius:99px;padding:4px 9px;background:#dcebf5}.footer{font-size:.83rem;color:#687e8e;text-align:center;padding:16px}#submit{width:100%;padding:15px}.small-button{flex:0 0 auto} @media(max-width:560px){.grid{grid-template-columns:1fr}.item{align-items:flex-start;flex-direction:column}.item .controls{align-self:flex-end}.row>*{flex:1 1 100%}.row>.small-button{flex:0 0 auto}}
+</style>
 </head>
-
-<body>
-  <div class="container">
-    <h1>🚑 LCEMS</h1>
-    <p>Supply Usage Scanner</p>
-
-    <div class="card">
-      <h2>Scan Supplies</h2>
-      <p>Keep the camera open while scanning multiple QR codes.</p>
-
-      <button id="startButton"
-              class="primary"
-              onclick="startScanner()">
-        📷 Start Scanning
-      </button>
-
-      <button id="stopButton"
-              class="secondary"
-              onclick="stopScanner()"
-              hidden>
-        Stop Scanner
-      </button>
-
-      <div id="reader"></div>
-      <p id="status">Camera not started.</p>
-    </div>
-
-    <div class="card">
-      <h2>Scanned Supplies</h2>
-      <div id="scanList">
-        No supplies scanned yet.
-      </div>
-    </div>
-  </div>
-
-  <script>
-    let scanner = null;
-    let scannerRunning = false;
-    let scannerStarting = false;
-
-    const scannedSupplies = new Map();
-
-    let lastScan = "";
-    let lastScanTime = 0;
-
-    const startButton =
-      document.getElementById("startButton");
-
-    const stopButton =
-      document.getElementById("stopButton");
-
-    const status =
-      document.getElementById("status");
-
-    async function startScanner() {
-      if (scannerRunning || scannerStarting) return;
-
-      if (typeof Html5Qrcode === "undefined") {
-        status.textContent =
-          "QR scanner library could not load.";
-        return;
-      }
-
-      scannerStarting = true;
-      startButton.disabled = true;
-      status.textContent = "Starting camera...";
-
-      try {
-        scanner = new Html5Qrcode("reader");
-
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 10,
-            qrbox: (width, height) => {
-              const size = Math.floor(
-                Math.min(width, height) * 0.75
-              );
-
-              return {
-                width: size,
-                height: size
-              };
-            }
-          },
-          onScanSuccess,
-          () => {}
-        );
-
-        scannerRunning = true;
-        startButton.hidden = true;
-        stopButton.hidden = false;
-
-        status.textContent =
-          "Camera ready. Scan a supply QR code.";
-
-      } catch (error) {
-        status.textContent =
-          "Camera error: " +
-          (error.message || String(error));
-
-        console.error(error);
-
-        if (scanner) {
-          try {
-            scanner.clear();
-          } catch (_) {}
-          scanner = null;
-        }
-      } finally {
-        scannerStarting = false;
-        startButton.disabled = false;
-      }
-    }
-
-    function onScanSuccess(decodedText) {
-      const value = String(decodedText || "").trim();
-
-      if (!value) return;
-
-      const now = Date.now();
-
-      // Prevent rapid duplicate scans of the same code.
-      if (
-        value === lastScan &&
-        now - lastScanTime < 3000
-      ) {
-        return;
-      }
-
-      lastScan = value;
-      lastScanTime = now;
-
-      // Temporary test: record the QR's actual contents.
-      const current = scannedSupplies.get(value) || 0;
-      scannedSupplies.set(value, current + 1);
-
-      renderScans();
-
-      status.textContent = "Scanned: " + value;
-
-      // Camera stays open for the next supply.
-    }
-
-    function renderScans() {
-      const list = document.getElementById("scanList");
-      list.innerHTML = "";
-
-      for (const [value, quantity] of scannedSupplies) {
-        const row = document.createElement("div");
-        row.className = "scan-item";
-
-        const name = document.createElement("span");
-        name.textContent = value;
-
-        const count = document.createElement("span");
-        count.className = "quantity";
-        count.textContent = "Qty: " + quantity;
-
-        row.appendChild(name);
-        row.appendChild(count);
-        list.appendChild(row);
-      }
-    }
-
-    async function stopScanner() {
-      if (!scannerRunning || !scanner) return;
-
-      try {
-        await scanner.stop();
-        scanner.clear();
-      } catch (error) {
-        console.error(error);
-      } finally {
-        scannerRunning = false;
-        scanner = null;
-
-        startButton.hidden = false;
-        stopButton.hidden = true;
-        status.textContent = "Scanner stopped.";
-      }
-    }
-  </script>
-
+<body><main>
+<header><h1>🚑 LCEMS</h1><p>Supply Usage · Scanner &amp; Review</p></header>
+<section class="card"><h2>1. Usage Details</h2><div id="loadStatus" class="status">Loading LCEMS data...</div><div class="grid"><div><label for="base">Base</label><select id="base"><option value="">Select base</option></select></div><div><label for="employee">Employee</label><select id="employee"><option value="">Select employee</option></select></div></div><label for="truck">Truck / Unit (optional)</label><input id="truck" autocomplete="off" placeholder="Truck or unit number"></section>
+<section class="card"><h2>2. Scan Supplies</h2><p class="muted">The camera stays open between scans. Repeated scans of the same code are briefly ignored to prevent accidental duplicates.</p><button id="start" class="primary" type="button">📷 Start scanning</button> <button id="stop" type="button" hidden>Stop camera</button><div id="reader"></div><div id="scanStatus" class="status">Camera not started.</div><div id="picker" class="picker" hidden><strong id="pickerTitle">Choose size</strong><div id="sizeButtons" class="sizes"></div><button id="closePicker" type="button">Cancel</button></div><label for="supplyId">Or enter a Supply ID</label><div class="row"><input id="supplyId" placeholder="SUP-0001 or GROUP-ETT" autocomplete="off"><button id="addId" class="primary small-button" type="button">Add ID</button></div></section>
+<section class="card"><h2>3. Search Supply Catalog</h2><input id="search" type="search" placeholder="Search supply name, category, or ID"><p class="muted" id="catalogCount">Loading catalog...</p><div id="catalog" class="catalog"></div></section>
+<section class="card"><h2>4. Quick Add</h2><p class="muted">Choose a grouped supply and then select its size.</p><div class="row"><button type="button" data-group="ETT">ETT sizes</button><button type="button" data-group="NPA">NPA sizes</button><button type="button" data-group="OPA">OPA sizes</button></div></section>
+<section class="card"><h2>5. Review Supplies <span id="total" class="pill">0 units</span></h2><div id="review" class="muted">No supplies selected yet.</div><div id="reviewStatus" class="status" hidden></div><button id="submit" class="primary" type="button" disabled>Submit Supply Usage (not enabled yet)</button><p class="muted">Testing mode: nothing on this page is submitted to Google Sheets. The existing LCEMS portal remains unchanged.</p></section>
+<div class="footer">LCEMS Supply Usage · Interface testing version</div>
+</main>
 <script>
-async function testApiConnection() {
-  const output = document.getElementById("apiTestResult");
-
-  output.textContent = "Testing connection...";
-
-  const url =
-    "https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP7caqBiBWnLqMCPR_10GXgkn9B_dX0xeHi7tL0M_w/exec" +
-    "?api=v1&action=bootstrap";
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      redirect: "follow"
-    });
-
-    const data = await response.json();
-
-    if (data.ok && data.data) {
-  const catalog = data.data.supplies || [];
-
-  output.textContent =
-    "SUCCESS! Loaded " +
-    catalog.length +
-    " supplies from LCEMS.";
-} else {
-  output.textContent =
-    "API returned an error.";
-}
-
-  } catch (error) {
-    console.error("API connection test:", error);
-
-    output.textContent =
-      "Connection blocked or failed: " + error.message;
-  }
-}
+'use strict';
+const API='https://script.google.com/macros/s/AKfycbwrXZGaueZJfG0oExVkc7ZI0W34BP7caqBiBWnLqMCPR_10GXgkn9B_dX0xeHi7tL0M_w/exec';
+const $=id=>document.getElementById(id);
+let catalog=[],scanner=null,starting=false,running=false,lastScan='',lastScanAt=0;
+const selected=new Map();
+function status(id,message,kind=''){const el=$(id);el.textContent=message;el.className='status'+(kind?' '+kind:'');}
+function values(input){return Array.isArray(input)?input.map(v=>typeof v==='string'?v:(v&&typeof v==='object'?(v.name||v.label||v.value||''):'' )).map(v=>String(v).trim()).filter(Boolean):[];}
+function populate(id,arr,placeholder){const select=$(id);select.replaceChildren(new Option(placeholder,''));for(const v of [...new Set(values(arr))])select.add(new Option(v,v));}
+function normalized(item){return {category:String(item?.category||'').trim(),supply:String(item?.supply||'').trim(),supplyID:String(item?.supplyID||'').trim(),trackInventory:item?.trackInventory};}
+async function loadData(){try{const response=await fetch(API+'?api=v1&action=bootstrap',{redirect:'follow'});if(!response.ok)throw Error('HTTP '+response.status);const json=await response.json();if(!json.ok||!json.data)throw Error(json.error?.message||'Invalid API response');const data=json.data;catalog=(Array.isArray(data.supplies)?data.supplies:[]).map(normalized).filter(x=>x.category&&x.supply&&x.trackInventory!==false&&String(x.trackInventory).toLowerCase()!=='false');populate('base',data.bases,'Select base');populate('employee',data.usageEmployees,'Select employee');status('loadStatus',`Loaded ${catalog.length} usable supplies from LCEMS. Select your base and employee.`, 'good');renderCatalog();}catch(err){status('loadStatus','Could not load LCEMS data: '+err.message,'error');$('catalogCount').textContent='Catalog unavailable.';}}
+function keyFor(item){return item.category+'|||'+item.supply;}
+function addItem(item,amount=1){const key=keyFor(item);const old=selected.get(key);selected.set(key,{category:item.category,supply:item.supply,quantity:(old?.quantity||0)+amount});renderReview();status('scanStatus','Added: '+item.supply,'good');}
+function handleId(raw){const id=String(raw||'').trim().toUpperCase();if(!id)return;if(['GROUP-ETT','GROUP-NPA','GROUP-OPA'].includes(id)){openPicker(id.slice(6));return;}const item=catalog.find(x=>x.supplyID.toUpperCase()===id);if(!item){status('scanStatus','Supply ID '+id+' was not found in the usable catalog.','error');return;}addItem(item);}
+function openPicker(group){const prefix=group.toUpperCase()+' ';const matches=catalog.filter(x=>x.supply.toUpperCase().startsWith(prefix)).sort((a,b)=>a.supply.localeCompare(b.supply,undefined,{numeric:true}));$('pickerTitle').textContent='Choose '+group+' size';const buttons=$('sizeButtons');buttons.replaceChildren();if(!matches.length){const p=document.createElement('p');p.textContent='No matching '+group+' supplies found in the catalog.';buttons.append(p);}for(const item of matches){const btn=document.createElement('button');btn.type='button';btn.textContent=item.supply.slice(prefix.length)||item.supply;btn.addEventListener('click',()=>{addItem(item);$('picker').hidden=true;});buttons.append(btn);}$('picker').hidden=false;$('picker').scrollIntoView({behavior:'smooth',block:'nearest'});}
+function renderCatalog(){const q=$('search').value.trim().toLowerCase();const matches=catalog.filter(x=>[x.category,x.supply,x.supplyID].some(v=>v.toLowerCase().includes(q)));$('catalogCount').textContent=`Showing ${Math.min(matches.length,60)} of ${matches.length} matching supplies${q?'':' (first 60 displayed)'}.`;const root=$('catalog');root.replaceChildren();for(const item of matches.slice(0,60)){const row=document.createElement('div');row.className='item';const desc=document.createElement('div');const strong=document.createElement('strong');strong.textContent=item.supply;const small=document.createElement('small');small.textContent=item.category+(item.supplyID?' · '+item.supplyID:'');desc.append(strong,small);const btn=document.createElement('button');btn.type='button';btn.textContent='+ Add';btn.addEventListener('click',()=>addItem(item));row.append(desc,btn);root.append(row);}if(!matches.length)root.textContent='No matching supplies.';}
+function renderReview(){const root=$('review');root.replaceChildren();let total=0;for(const [key,item] of selected){total+=item.quantity;const row=document.createElement('div');row.className='item';const desc=document.createElement('div');const name=document.createElement('strong');name.textContent=item.supply;const sub=document.createElement('small');sub.textContent=item.category;desc.append(name,sub);const controls=document.createElement('div');controls.className='controls';const minus=document.createElement('button');minus.textContent='−';minus.type='button';minus.setAttribute('aria-label','Decrease '+item.supply);minus.addEventListener('click',()=>changeQty(key,-1));const qty=document.createElement('span');qty.textContent=item.quantity;const plus=document.createElement('button');plus.textContent='+';plus.type='button';plus.setAttribute('aria-label','Increase '+item.supply);plus.addEventListener('click',()=>changeQty(key,1));const remove=document.createElement('button');remove.textContent='Remove';remove.type='button';remove.className='danger';remove.addEventListener('click',()=>{selected.delete(key);renderReview();});controls.append(minus,qty,plus,remove);row.append(desc,controls);root.append(row);}if(!selected.size)root.textContent='No supplies selected yet.';$('total').textContent=total+' unit'+(total===1?'':'s');}
+function changeQty(key,delta){const item=selected.get(key);if(!item)return;item.quantity+=delta;if(item.quantity<=0)selected.delete(key);renderReview();}
+function onScan(decoded){const value=String(decoded||'').trim();if(!value)return;const now=Date.now();if(value===lastScan&&now-lastScanAt<3000)return;lastScan=value;lastScanAt=now;$('supplyId').value=value;handleId(value);}
+async function startScanner(){if(starting||running)return;if(typeof Html5Qrcode==='undefined'){status('scanStatus','QR scanner library did not load.','error');return;}starting=true;$('start').disabled=true;status('scanStatus','Starting camera...');try{scanner=new Html5Qrcode('reader');await scanner.start({facingMode:'environment'},{fps:10,qrbox:(w,h)=>{const n=Math.floor(Math.min(w,h)*.75);return{width:n,height:n};}},onScan,()=>{});running=true;$('start').hidden=true;$('stop').hidden=false;status('scanStatus','Camera ready. Scan a supply QR code.','good');}catch(err){status('scanStatus','Camera error: '+(err.message||String(err)),'error');try{scanner?.clear();}catch(_){}scanner=null;}finally{starting=false;$('start').disabled=false;}}
+async function stopScanner(){if(!running||!scanner)return;$('stop').disabled=true;try{await scanner.stop();scanner.clear();}catch(err){console.error(err);}finally{scanner=null;running=false;$('start').hidden=false;$('stop').hidden=true;$('stop').disabled=false;status('scanStatus','Camera stopped.');}}
+$('start').addEventListener('click',startScanner);$('stop').addEventListener('click',stopScanner);$('addId').addEventListener('click',()=>{handleId($('supplyId').value);$('supplyId').value='';});$('supplyId').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('addId').click();}});$('closePicker').addEventListener('click',()=>{$('picker').hidden=true;});$('search').addEventListener('input',renderCatalog);document.querySelectorAll('[data-group]').forEach(btn=>btn.addEventListener('click',()=>openPicker(btn.dataset.group)));loadData();
 </script>
-
-<div class="card">
-  <h2>API Connection Test</h2>
-  <button class="primary" onclick="testApiConnection()">
-    Test Google Sheets Connection
-  </button>
-  <p id="apiTestResult">Not tested yet.</p>
-</div>
-
-</body>
-</html>
+</body></html>
